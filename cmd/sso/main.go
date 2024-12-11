@@ -3,8 +3,10 @@ package main
 import (
 	"log/slog"
 	"os"
+	"os/signal"
 	"sso/internal/app"
 	"sso/internal/config"
+	"syscall"
 )
 
 const (
@@ -14,6 +16,7 @@ const (
 )
 
 func main() {
+	// запуск	
 	cfg := config.MustLoad()
 	log := setupLogger(cfg.Env)
 	log.Info("starting application",
@@ -21,9 +24,20 @@ func main() {
 		 slog.Any("cfg", cfg),
 		 slog.Int("port", cfg.GRPC.Port),
 		)
-	application := app.New(log, cfg.GRPC.Port, cfg.StoragePath, cfg.TokenTTL)
-	application.GRPCSrv.MustRun()
 
+	application := app.New(log, cfg.GRPC.Port, cfg.StoragePath, cfg.TokenTTL)
+	go application.GRPCSrv.MustRun()
+	
+	stop := make(chan os.Signal, 1)
+	signal.Notify(stop, syscall.SIGTERM, syscall.SIGINT)
+
+	// блокирующая операция
+	// пока не случится запись в канал syscall.SIGTERM/syscall.SIGINT
+	sign :=<-stop
+	log.Info("stopping application", slog.String("signal", sign.String()))
+	
+	application.GRPCSrv.Stop()
+	log.Info("application stopped")
 }
 
 func setupLogger(env string) *slog.Logger {
